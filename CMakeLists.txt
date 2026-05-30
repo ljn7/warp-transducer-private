@@ -70,14 +70,12 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
 endif()
 
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -g")
-else()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2")
-endif()
-
-if(WITH_OMP)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
+if(NOT MSVC)
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -g")
+    else()
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2")
+    endif()
 endif()
 
 if(APPLE)
@@ -113,8 +111,18 @@ endif()
 
 # ==== CUDA CONFIGURATION ====
 if(USE_CUDA)
-    if(WITH_OMP)
-        set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -Xcompiler -fopenmp")
+    # Allow constexpr standard library functions (e.g. std::numeric_limits<T>::infinity)
+    # to be called from __host__ __device__ code. NVCC evaluates constexpr at compile
+    # time and embeds the result as a device constant, so this is safe and correct.
+    # Supported since CUDA 7.5; well-established in CUDA 10+.
+    set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} --expt-relaxed-constexpr")
+
+    if(WITH_OMP AND OpenMP_CXX_FOUND)
+        if(WIN32)
+            set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -Xcompiler /openmp")
+        else()
+            set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -Xcompiler -fopenmp")
+        endif()
     endif()
 
     if(NOT (CUDA_VERSION GREATER 10.2))
@@ -125,7 +133,7 @@ if(USE_CUDA)
 
     set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_52,code=sm_52")
     
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER "5")
         set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -D_MWAITXINTRIN_H_INCLUDED -D_FORCE_INLINES")
     endif()
 
@@ -143,13 +151,27 @@ if(USE_CUDA)
         set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_75,code=sm_75")
     endif()
 
-    if(CUDA_VERSION GREATER 11.0)
+    if(CUDA_VERSION VERSION_GREATER_EQUAL "11.0")
         set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_80,code=sm_80")
         set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_86,code=sm_86")
     endif()
 
     if(NOT APPLE)
         set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} --std=c++17")
+    endif()
+
+    # Suppress the deprecation notice about GPU architectures older than sm_75.
+    # Those targets are still included for backward compatibility; we just do not
+    # want the noise in the build output. This is purely cosmetic.
+    set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -Wno-deprecated-gpu-targets")
+
+    # MSVC 19.50+ is Visual Studio 2025, which postdates CUDA 12.x's supported
+    # host compiler list. The -allow-unsupported-compiler flag bypasses the
+    # version check in cuda/crt/host_config.h. VS 2025 is ABI-compatible with
+    # VS 2022, so this is safe in practice.
+    if(MSVC AND MSVC_VERSION GREATER_EQUAL 1950)
+        set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -allow-unsupported-compiler")
+        message(STATUS "VS 2025 detected (MSVC ${CMAKE_CXX_COMPILER_VERSION}): adding -allow-unsupported-compiler")
     endif()
 
     message(STATUS "CUDA NVCC flags: ${CUDA_NVCC_FLAGS}")
@@ -188,14 +210,25 @@ else()
     endif()
 endif()
 
-set_target_properties(warprnnt PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
-    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
-    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
-)
-
 if(WIN32)
     set_target_properties(warprnnt PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+endif()
+
+set_target_properties(warprnnt PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+)
+
+# On Windows, multi-config generators (Visual Studio) place executables in
+# per-config subdirectories (build\Release\, build\Debug\) by default, while
+# the DLL above is forced to build\. These overrides keep test executables in
+# build\ as well so they find warprnnt.dll without modifying PATH.
+if(WIN32)
+    foreach(_cfg IN ITEMS RELEASE DEBUG RELWITHDEBINFO MINSIZEREL)
+        set("CMAKE_RUNTIME_OUTPUT_DIRECTORY_${_cfg}" "${CMAKE_BINARY_DIR}")
+    endforeach()
+    unset(_cfg)
 endif()
 
 # Use include_directories (global) since we're mixing legacy/modern approaches
@@ -204,20 +237,16 @@ endif()
 # ==== TEST EXECUTABLES ====
 add_executable(test_cpu tests/test_cpu.cpp tests/random.cpp)
 target_link_libraries(test_cpu warprnnt)
-set_target_properties(test_cpu PROPERTIES COMPILE_FLAGS "${CMAKE_CXX_FLAGS} --std=c++11")
 
 add_executable(test_time tests/test_time.cpp tests/random.cpp)
 target_link_libraries(test_time warprnnt)
-set_target_properties(test_time PROPERTIES COMPILE_FLAGS "${CMAKE_CXX_FLAGS} --std=c++11")
 
 if(USE_CUDA)
     cuda_add_executable(test_time_gpu tests/test_time.cu tests/random.cpp)
     target_link_libraries(test_time_gpu warprnnt ${CUDA_curand_LIBRARY})
-    set_target_properties(test_time_gpu PROPERTIES COMPILE_FLAGS "${CMAKE_CXX_FLAGS} --std=c++11")
 
     cuda_add_executable(test_gpu tests/test_gpu.cu tests/random.cpp)
     target_link_libraries(test_gpu warprnnt ${CUDA_curand_LIBRARY})
-    set_target_properties(test_gpu PROPERTIES COMPILE_FLAGS "${CMAKE_CXX_FLAGS} --std=c++11")
 endif()
 
 # ==== INSTALL TARGETS ====

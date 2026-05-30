@@ -261,7 +261,7 @@ CpuRNNT<ProbT>::compute_betas_and_grad(ProbT* grad, const ProbT* const log_probs
             if (u < U-1) {
                 ProbT g = alphas[idx(t, u)] + betas[idx(t, u+1)];
                 grad[idx(t, u, labels[u])] = -(
-                                               (1. + fastemit_lambda_)
+                                               (ProbT(1) + fastemit_lambda_)
                                                * std::exp(log_probs[idx(t, u) * 2 + 1] + g - loglike)
                                                );
             }

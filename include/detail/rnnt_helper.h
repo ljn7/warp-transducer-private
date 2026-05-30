@@ -8,10 +8,10 @@
 
 namespace rnnt_helper {
 
-static const float threshold = 1e-1;
+static const float threshold = 1e-1f;
 
 template<typename T>
-inline HOSTDEVICE T neg_inf() { return -T(INFINITY); }
+inline HOSTDEVICE T neg_inf() { return -std::numeric_limits<T>::infinity(); }
 
 template<typename T>
 inline HOSTDEVICE T log_sum_exp(T a, T b) {

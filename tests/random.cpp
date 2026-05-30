@@ -5,7 +5,7 @@ float *
 genActs(int size) {
     float * arr = new float[size];
     std::mt19937 gen(0);
-    std::uniform_real_distribution<> dis(0, 1);
+    std::uniform_real_distribution<float> dis(0.0f, 1.0f);
     for(int i = 0; i < size; ++i)
         arr[i] = dis(gen);
     return arr;
@@ -14,8 +14,8 @@ genActs(int size) {
 void
 genActs(std::vector<float>& arr) {
     std::mt19937 gen(0);
-    std::uniform_real_distribution<> dis(0, 1);
-    for(int i = 0; i < arr.size(); ++i)
+    std::uniform_real_distribution<float> dis(0.0f, 1.0f);
+    for(int i = 0; i < (int)arr.size(); ++i)
         arr[i] = dis(gen);
 }
 

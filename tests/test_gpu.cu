@@ -21,15 +21,15 @@ bool small_test() {
     const int T = 2;
     const int U = 3;
 
-    std::vector<float> acts = {0.1, 0.6, 0.1, 0.1, 0.1, 0.1, 
-                                0.1, 0.6, 0.1, 0.1, 0.1, 0.1, 
-                                0.2, 0.8, 0.1, 0.1, 0.6, 0.1, 
-                                0.1, 0.1, 0.1, 0.1, 0.2, 0.1, 
-                                0.1, 0.7, 0.1, 0.2, 0.1, 0.1};
+    std::vector<float> acts = {0.1f, 0.6f, 0.1f, 0.1f, 0.1f, 0.1f,
+                                0.1f, 0.6f, 0.1f, 0.1f, 0.1f, 0.1f,
+                                0.2f, 0.8f, 0.1f, 0.1f, 0.6f, 0.1f,
+                                0.1f, 0.1f, 0.1f, 0.1f, 0.2f, 0.1f,
+                                0.1f, 0.7f, 0.1f, 0.2f, 0.1f, 0.1f};
     // std::vector<float> log_probs(acts.size());
     // softmax(acts.data(), alphabet_size, B * T * U, log_probs.data(), true);
 
-    float expected_score = 4.495666;
+    float expected_score = 4.495666f;
 
     std::vector<int> labels = {1, 2};
     std::vector<int> label_lengths = {2};
@@ -73,7 +73,7 @@ bool small_test() {
                                     label_length_gpu,
                                     input_length_gpu,
                                     alphabet_size,
-                                    lengths.size(),
+                                    (int)lengths.size(),
                                     &score,
                                     rnnt_gpu_workspace,
                                     options),
@@ -85,7 +85,7 @@ bool small_test() {
     cudaFree(label_length_gpu);
     cudaFree(input_length_gpu);
 
-    const float eps = 1e-4;
+    const float eps = 1e-4f;
 
     const float lb = expected_score - eps;
     const float ub = expected_score + eps;
@@ -99,33 +99,33 @@ bool options_test() {
     const int L = 3;
     const int minibatch = 2;
 
-    std::vector<float> acts = {0.065357, 0.787530, 0.081592, 0.529716, 0.750675, 0.754135, 
-                                0.609764, 0.868140, 0.622532, 0.668522, 0.858039, 0.164539, 
-                                0.989780, 0.944298, 0.603168, 0.946783, 0.666203, 0.286882, 
-                                0.094184, 0.366674, 0.736168, 0.166680, 0.714154, 0.399400, 
-                                0.535982, 0.291821, 0.612642, 0.324241, 0.800764, 0.524106, 
-                                0.779195, 0.183314, 0.113745, 0.240222, 0.339470, 0.134160, 
-                                0.505562, 0.051597, 0.640290, 0.430733, 0.829473, 0.177467, 
-                                0.320700, 0.042883, 0.302803, 0.675178, 0.569537, 0.558474, 
-                                0.083132, 0.060165, 0.107958, 0.748615, 0.943918, 0.486356, 
-                                0.418199, 0.652408, 0.024243, 0.134582, 0.366342, 0.295830, 
-                                0.923670, 0.689929, 0.741898, 0.250005, 0.603430, 0.987289, 
-                                0.592606, 0.884672, 0.543450, 0.660770, 0.377128, 0.358021};
+    std::vector<float> acts = {0.065357f, 0.787530f, 0.081592f, 0.529716f, 0.750675f, 0.754135f,
+                                0.609764f, 0.868140f, 0.622532f, 0.668522f, 0.858039f, 0.164539f,
+                                0.989780f, 0.944298f, 0.603168f, 0.946783f, 0.666203f, 0.286882f,
+                                0.094184f, 0.366674f, 0.736168f, 0.166680f, 0.714154f, 0.399400f,
+                                0.535982f, 0.291821f, 0.612642f, 0.324241f, 0.800764f, 0.524106f,
+                                0.779195f, 0.183314f, 0.113745f, 0.240222f, 0.339470f, 0.134160f,
+                                0.505562f, 0.051597f, 0.640290f, 0.430733f, 0.829473f, 0.177467f,
+                                0.320700f, 0.042883f, 0.302803f, 0.675178f, 0.569537f, 0.558474f,
+                                0.083132f, 0.060165f, 0.107958f, 0.748615f, 0.943918f, 0.486356f,
+                                0.418199f, 0.652408f, 0.024243f, 0.134582f, 0.366342f, 0.295830f,
+                                0.923670f, 0.689929f, 0.741898f, 0.250005f, 0.603430f, 0.987289f,
+                                0.592606f, 0.884672f, 0.543450f, 0.660770f, 0.377128f, 0.358021f};
     // std::vector<float> log_probs(acts.size());
     // softmax(acts.data(), alphabet_size, minibatch * T * L, log_probs.data(), true);
 
-    std::vector<float> expected_grads = {-0.186844, -0.062555, 0.249399, -0.203377, 0.202399, 0.000977,
-                                        -0.141016, 0.079123, 0.061893, -0.011552, -0.081280, 0.092832,
-                                        -0.154257, 0.229433, -0.075176, -0.246593, 0.146405, 0.100188,
-                                        -0.012918, -0.061593, 0.074512, -0.055986, 0.219831, -0.163845,
-                                        -0.497627, 0.209240, 0.288387, 0.013605, -0.030220, 0.016615,
-                                        0.113925, 0.062781, -0.176706, -0.667078, 0.367659, 0.299419,
-                                        -0.356344, -0.055347, 0.411691, -0.096922, 0.029459, 0.067463,
-                                        -0.063518, 0.027654, 0.035863, -0.154499, -0.073942, 0.228441,
-                                        -0.166790, -0.000088, 0.166878, -0.172370, 0.105565, 0.066804,
-                                        0.023875, -0.118256, 0.094381, -0.104707, -0.108934, 0.213642,
-                                        -0.369844, 0.180118, 0.189726, 0.025714, -0.079462, 0.053748,
-                                        0.122328, -0.238789, 0.116460, -0.598687, 0.302203, 0.296484};
+    std::vector<float> expected_grads = {-0.186844f, -0.062555f, 0.249399f, -0.203377f, 0.202399f, 0.000977f,
+                                        -0.141016f, 0.079123f, 0.061893f, -0.011552f, -0.081280f, 0.092832f,
+                                        -0.154257f, 0.229433f, -0.075176f, -0.246593f, 0.146405f, 0.100188f,
+                                        -0.012918f, -0.061593f, 0.074512f, -0.055986f, 0.219831f, -0.163845f,
+                                        -0.497627f, 0.209240f, 0.288387f, 0.013605f, -0.030220f, 0.016615f,
+                                        0.113925f, 0.062781f, -0.176706f, -0.667078f, 0.367659f, 0.299419f,
+                                        -0.356344f, -0.055347f, 0.411691f, -0.096922f, 0.029459f, 0.067463f,
+                                        -0.063518f, 0.027654f, 0.035863f, -0.154499f, -0.073942f, 0.228441f,
+                                        -0.166790f, -0.000088f, 0.166878f, -0.172370f, 0.105565f, 0.066804f,
+                                        0.023875f, -0.118256f, 0.094381f, -0.104707f, -0.108934f, 0.213642f,
+                                        -0.369844f, 0.180118f, 0.189726f, 0.025714f, -0.079462f, 0.053748f,
+                                        0.122328f, -0.238789f, 0.116460f, -0.598687f, 0.302203f, 0.296484f};
 
     // Calculate the expected scores analytically
     std::vector<double> expected_scores(2);
@@ -172,11 +172,11 @@ bool options_test() {
 
     throw_on_error(compute_rnnt_loss(acts_gpu,
                                     grads_gpu,
-                                    label_gpu, 
+                                    label_gpu,
                                     label_length_gpu,
                                     input_length_gpu,
                                     alphabet_size,
-                                    lengths.size(),
+                                    (int)lengths.size(),
                                     scores.data(),
                                     rnnt_gpu_workspace,
                                     options),
@@ -277,11 +277,11 @@ bool inf_test() {
 
     throw_on_error(compute_rnnt_loss(acts_gpu,
                                     grads_gpu,
-                                    label_gpu, 
+                                    label_gpu,
                                     label_length_gpu,
                                     input_length_gpu,
                                     alphabet_size,
-                                    sizes.size(),
+                                    (int)sizes.size(),
                                     &cost,
                                     rnnt_gpu_workspace,
                                     options),
@@ -309,7 +309,7 @@ void numeric_grad(float* acts, int* flat_labels, int* label_lengths,
                 int* sizes, int alphabet_size, int minibatch, 
                 void* rnnt_gpu_workspace, rnntOptions& options, std::vector<float>& num_grad) {
 
-    float epsilon = 1e-2;
+    float epsilon = 1e-2f;
     float act;
 
     for (int i = 0; i < num_grad.size(); ++i) {
@@ -347,8 +347,8 @@ void numeric_grad(float* acts, int* flat_labels, int* label_lengths,
                                         options),
                        "Error: compute_rnnt_loss (2) in grad_check");
 
-        float costP1 = std::accumulate(costsP1.begin(), costsP1.end(), 0.);
-        float costP2 = std::accumulate(costsP2.begin(), costsP2.end(), 0.);
+        float costP1 = std::accumulate(costsP1.begin(), costsP1.end(), 0.0f);
+        float costP2 = std::accumulate(costsP2.begin(), costsP2.end(), 0.0f);
 
         cudaMemcpy(&act, &acts[i], sizeof(float), cudaMemcpyDeviceToHost);
         act += epsilon;
@@ -362,13 +362,13 @@ bool grad_check(int T, int L, int alphabet_size,
                   const std::vector<std::vector<int>>& labels,
                   std::vector<int>& sizes, float tol) {
 
-    const int minibatch = labels.size();
+    const int minibatch = (int)labels.size();
 
     std::vector<int> flat_labels;
     std::vector<int> label_lengths;
     for (const auto& l : labels) {
         flat_labels.insert(flat_labels.end(), l.begin(), l.end());
-        label_lengths.push_back(l.size());
+        label_lengths.push_back((int)l.size());
     }
 
     std::vector<float> costs(minibatch);
@@ -397,7 +397,7 @@ bool grad_check(int T, int L, int alphabet_size,
     options.num_threads = 1;
 
     size_t gpu_alloc_bytes;
-    throw_on_error(get_workspace_size(T, L, sizes.size(),
+    throw_on_error(get_workspace_size(T, L, (int)sizes.size(),
                                       true,
                                       &gpu_alloc_bytes),
                    "Error: get_workspace_size in grad_check");
@@ -407,17 +407,17 @@ bool grad_check(int T, int L, int alphabet_size,
 
     throw_on_error(compute_rnnt_loss(acts_gpu,
                                     grads_gpu,
-                                    label_gpu, 
+                                    label_gpu,
                                     label_length_gpu,
                                     input_length_gpu,
                                     alphabet_size,
-                                    sizes.size(),
+                                    (int)sizes.size(),
                                     costs.data(),
                                     rnnt_gpu_workspace,
                                     options),
                    "Error: compute_rnnt_loss (0) in grad_check");
 
-    float cost = std::accumulate(costs.begin(), costs.end(), 0.);
+    float cost = std::accumulate(costs.begin(), costs.end(), 0.0f);
 
     cudaMemcpyAsync(grads.data(), grads_gpu, grads.size() * sizeof(float), cudaMemcpyDeviceToHost, stream);
 
@@ -441,8 +441,8 @@ bool grad_check(int T, int L, int alphabet_size,
 
 bool run_tests() {
     std::vector<std::tuple<int, int, int, int, float>> problem_sizes =
-       {std::make_tuple(20, 50, 15, 1, 1e-2),
-        std::make_tuple(5, 10, 5, 65, 1e-2)
+       {std::make_tuple(20, 50, 15, 1, 1e-2f),
+        std::make_tuple(5, 10, 5, 65, 1e-2f)
        };
 
     std::mt19937 gen(2);

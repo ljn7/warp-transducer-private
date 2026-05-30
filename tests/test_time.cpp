@@ -34,7 +34,7 @@ void run_test(int B, int T, int L, int A, int num_threads) {
     std::vector<int> label_lengths;
     for (const auto& l : labels) {
         flat_labels.insert(flat_labels.end(), l.begin(), l.end());
-        label_lengths.push_back(l.size());
+        label_lengths.push_back((int)l.size());
     }
 
     std::vector<float> costs(B);
@@ -72,7 +72,7 @@ void run_test(int B, int T, int L, int A, int num_threads) {
         free(grads);
         free(rnnt_cpu_workspace);
         elapsed = end - start;
-        time.push_back(elapsed.count() * 1000);
+        time.push_back((float)(elapsed.count() * 1000));
         std::cout << "compute_rnnt_loss elapsed time: " << elapsed.count() * 1000 << " ms\n";
     }
 
@@ -90,7 +90,7 @@ void run_test(int B, int T, int L, int A, int num_threads) {
 
     std::cout << "average 10 time cost: " << sum << " ms variance: " << std << std::endl;
 
-    float cost = std::accumulate(costs.begin(), costs.end(), 0.);
+    float cost = std::accumulate(costs.begin(), costs.end(), 0.0f);
 
     free(acts);
 }
