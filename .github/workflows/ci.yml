@@ -1,7 +1,13 @@
 name: CI
 
-# Runs on every push and pull request to verify the CPU build and tests.
-# This is fast (no GPU needed) and works on GitHub's free runners.
+# Runs on every push and pull request.
+#
+# CPU jobs build the library AND run test_cpu on Linux, macOS, Windows.
+# GPU jobs only COMPILE the CUDA code (install the CUDA toolkit and build
+# with WITH_GPU=ON). They do not run test_gpu, because GitHub-hosted runners
+# have no GPU. A compile check still catches CUDA syntax, type, kernel
+# signature, and link errors. To actually run GPU tests you need a
+# self-hosted runner with an NVIDIA GPU.
 
 on:
   push:
@@ -93,3 +99,77 @@ jobs:
 
       - name: Run CPU tests
         run: .\build\test_cpu.exe
+
+  # -------------------------------------------------------------------------
+  # Linux GPU build (compile-only)
+  # Builds inside an NVIDIA CUDA "devel" image that ships nvcc + curand.
+  # No GPU is present, so we compile but do not run test_gpu.
+  # -------------------------------------------------------------------------
+  build-linux-gpu:
+    name: Linux GPU build (CUDA, compile-only)
+    runs-on: ubuntu-latest
+    container:
+      image: nvidia/cuda:12.4.1-devel-ubuntu22.04
+      options: --user root
+
+    env:
+      DEBIAN_FRONTEND: noninteractive
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          apt-get update -qq
+          apt-get install -y cmake ninja-build build-essential git
+
+      - name: Configure (GPU)
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DWITH_GPU=ON
+
+      - name: Build (compiles CUDA; no GPU required)
+        run: cmake --build build --parallel
+
+      - name: List built artifacts
+        run: ls -lh build
+
+  # -------------------------------------------------------------------------
+  # Windows GPU build (compile-only)
+  # Installs the CUDA toolkit, sets up the MSVC environment for the Ninja
+  # generator, and compiles with WITH_GPU=ON. Does not run test_gpu.
+  # -------------------------------------------------------------------------
+  build-windows-gpu:
+    name: Windows GPU build (CUDA, compile-only)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install CUDA toolkit
+        uses: Jimver/cuda-toolkit@v0.2.15
+        with:
+          cuda: "12.4.0"
+          method: network
+          sub-packages: '["nvcc", "cudart", "curand", "cublas", "thrust", "visual_studio_integration"]'
+
+      - name: Set up MSVC environment
+        # The Ninja generator does not auto-load vcvars the way the Visual
+        # Studio generator does, so cl.exe must be put on PATH explicitly.
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Add Ninja to PATH
+        run: |
+          $ninja = Get-ChildItem -Recurse "C:\Program Files\Microsoft Visual Studio" -Filter ninja.exe 2>$null | Select-Object -First 1
+          if ($ninja) {
+            echo $ninja.DirectoryName | Out-File -Append -FilePath $env:GITHUB_PATH
+          }
+
+      - name: Configure (GPU)
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DWITH_GPU=ON
+
+      - name: Build (compiles CUDA; no GPU required)
+        run: cmake --build build
+
+      - name: List built artifacts
+        run: Get-ChildItem build
