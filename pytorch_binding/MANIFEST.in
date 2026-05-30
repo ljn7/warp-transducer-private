@@ -1,0 +1,16 @@
+# Files to include in the source distribution (sdist) uploaded to PyPI.
+#
+# When someone runs "pip install warprnnt-pytorch" from PyPI, pip downloads
+# the sdist and runs setup.py. Setup.py will try to build the C library with
+# cmake. For that to work, the C source files must be included here.
+
+# The Python binding itself
+recursive-include src *
+recursive-include warprnnt_pytorch *
+
+# The C library source (one level up from pytorch_binding/)
+include ../CMakeLists.txt
+include ../LICENSE
+include ../README.md
+recursive-include ../include *
+include ../src/rnnt_entrypoint.cu

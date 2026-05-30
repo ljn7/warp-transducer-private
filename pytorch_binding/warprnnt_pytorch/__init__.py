@@ -1,3 +1,13 @@
+import os
+import sys
+
+# On Windows, the DLL search rules changed in Python 3.8. PATH is no longer
+# used to find DLLs loaded by extension modules. We copy warprnnt.dll into
+# this package directory at install time, then tell Python to look here.
+if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
+    _pkg_dir = os.path.dirname(os.path.abspath(__file__))
+    os.add_dll_directory(_pkg_dir)
+
 import torch
 import warprnnt_pytorch as warp_rnnt
 from torch.autograd import Function
