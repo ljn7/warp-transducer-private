@@ -1,0 +1,447 @@
+name: Build and publish wheels
+
+# Triggers on GitHub Release publish, or manually via workflow_dispatch.
+#
+# STRATEGY
+# --------
+# CPU wheels  -> uploaded to PyPI (pip install warprnnt-pytorch)
+# CUDA wheels -> uploaded to GitHub Releases as assets
+#               (pip install warprnnt-pytorch+cu121
+#                --find-links https://github.com/.../releases)
+#
+# This avoids the PyPI ban on "+" in version strings while still letting
+# GPU users install with one pip command.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      upload_pypi:
+        description: "Upload CPU wheels to PyPI?"
+        required: false
+        default: "true"
+
+# ---------------------------------------------------------------------------
+# Reusable step snippets (via env + shared steps pattern)
+# ---------------------------------------------------------------------------
+env:
+  # The full list of PyTorch+CUDA combinations we build CUDA wheels for.
+  # Kept as a reference comment -- actual matrix is in each job below.
+  #
+  #  torch 2.3: cu118, cu121
+  #  torch 2.4: cu118, cu121, cu124
+  #  torch 2.5: cu118, cu121, cu124
+  #  torch 2.6: cu124, cu126
+  PACKAGE_NAME: warprnnt-pytorch
+
+jobs:
+
+  # ===========================================================================
+  # LINUX CPU WHEELS  ->  uploaded to PyPI
+  # ===========================================================================
+  linux-cpu:
+    name: Linux CPU / Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/pypa/manylinux_2_28_x86_64
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve Python path (manylinux uses /opt/python)
+        run: |
+          VER=$(echo "${{ matrix.python }}" | tr -d '.')
+          echo "PYTHON=/opt/python/cp${VER}-cp${VER}/bin/python" >> $GITHUB_ENV
+          echo "PIP=/opt/python/cp${VER}-cp${VER}/bin/pip"       >> $GITHUB_ENV
+
+      - name: Install tools and PyTorch (CPU)
+        run: |
+          yum install -y cmake ninja-build || true
+          $PIP install --upgrade pip
+          $PIP install torch --index-url https://download.pytorch.org/whl/cpu
+          $PIP install wheel setuptools packaging auditwheel
+
+      - name: Build C library (CPU only)
+        run: |
+          mkdir -p build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DWITH_GPU=OFF -G Ninja
+          cmake --build . --parallel
+
+      - name: Build raw wheel
+        run: |
+          cd pytorch_binding
+          WARP_RNNT_PATH=../build $PIP wheel . -w /tmp/raw
+
+      - name: Repair wheel (manylinux -- bundles libwarprnnt.so)
+        run: auditwheel repair /tmp/raw/*.whl -w dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-linux-cpu-py${{ matrix.python }}
+          path: dist/*.whl
+
+  # ===========================================================================
+  # WINDOWS CPU WHEELS  ->  uploaded to PyPI
+  # ===========================================================================
+  windows-cpu:
+    name: Windows CPU / Python ${{ matrix.python }}
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Add Ninja to PATH
+        run: |
+          $n = Get-ChildItem "C:\Program Files\Microsoft Visual Studio" -Recurse -Filter ninja.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($n) { Add-Content $env:GITHUB_PATH $n.DirectoryName }
+
+      - name: Install PyTorch (CPU) and build tools
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install wheel setuptools packaging delvewheel
+
+      - name: Build C library (CPU only)
+        run: python build.py --no-install --no-gpu
+
+      - name: Build raw wheel
+        run: |
+          cd pytorch_binding
+          $env:WARP_RNNT_PATH = (Resolve-Path "../build").Path
+          pip wheel . -w C:\tmp\raw
+
+      - name: Repair wheel (bundle warprnnt.dll)
+        run: delvewheel repair C:\tmp\raw\*.whl -w dist\
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-windows-cpu-py${{ matrix.python }}
+          path: dist\*.whl
+
+  # ===========================================================================
+  # MACOS CPU WHEELS  ->  uploaded to PyPI
+  # ===========================================================================
+  macos-cpu:
+    name: macOS CPU / Python ${{ matrix.python }}
+    runs-on: macos-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - run: brew install cmake ninja
+
+      - name: Install PyTorch (CPU) and build tools
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install wheel setuptools packaging delocate
+
+      - name: Build C library (CPU only)
+        run: |
+          mkdir -p build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DWITH_GPU=OFF -G Ninja
+          cmake --build . --parallel
+
+      - name: Build raw wheel
+        run: |
+          cd pytorch_binding
+          WARP_RNNT_PATH=../build pip wheel . -w /tmp/raw
+
+      - name: Repair wheel (bundle libwarprnnt.dylib)
+        run: delocate-wheel -w dist/ /tmp/raw/*.whl
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-macos-cpu-py${{ matrix.python }}
+          path: dist/*.whl
+
+  # ===========================================================================
+  # LINUX CUDA WHEELS  ->  uploaded to GitHub Releases
+  #
+  # The wheel version has +cuXXX appended:
+  #   warprnnt_pytorch-0.2.0+cu121-cp311-cp311-manylinux_2_28_x86_64.whl
+  #
+  # Users install with:
+  #   pip install "warprnnt-pytorch[cu121]"
+  #   --find-links https://github.com/OWNER/REPO/releases
+  #
+  # Building in a Docker container that has the CUDA dev toolkit.
+  # No GPU is required for compilation.
+  # ===========================================================================
+  linux-cuda:
+    name: Linux CUDA ${{ matrix.cuda }} / Torch ${{ matrix.torch }} / Py ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.cuda_image }}
+      options: --user root
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12"]
+        include:
+          # ---- PyTorch 2.4 ----
+          - torch: "2.4"
+            cuda: "cu118"
+            cuda_image: "nvidia/cuda:11.8.0-devel-ubuntu22.04"
+            torch_index: "https://download.pytorch.org/whl/cu118"
+            cudart_lib: "libcudart.so.11.0"
+
+          - torch: "2.4"
+            cuda: "cu121"
+            cuda_image: "nvidia/cuda:12.1.0-devel-ubuntu22.04"
+            torch_index: "https://download.pytorch.org/whl/cu121"
+            cudart_lib: "libcudart.so.12"
+
+          - torch: "2.4"
+            cuda: "cu124"
+            cuda_image: "nvidia/cuda:12.4.1-devel-ubuntu22.04"
+            torch_index: "https://download.pytorch.org/whl/cu124"
+            cudart_lib: "libcudart.so.12"
+
+          # ---- PyTorch 2.5 ----
+          - torch: "2.5"
+            cuda: "cu118"
+            cuda_image: "nvidia/cuda:11.8.0-devel-ubuntu22.04"
+            torch_index: "https://download.pytorch.org/whl/cu118"
+            cudart_lib: "libcudart.so.11.0"
+
+          - torch: "2.5"
+            cuda: "cu121"
+            cuda_image: "nvidia/cuda:12.1.0-devel-ubuntu22.04"
+            torch_index: "https://download.pytorch.org/whl/cu121"
+            cudart_lib: "libcudart.so.12"
+
+          - torch: "2.5"
+            cuda: "cu124"
+            cuda_image: "nvidia/cuda:12.4.1-devel-ubuntu22.04"
+            torch_index: "https://download.pytorch.org/whl/cu124"
+            cudart_lib: "libcudart.so.12"
+
+          # ---- PyTorch 2.6 ----
+          - torch: "2.6"
+            cuda: "cu124"
+            cuda_image: "nvidia/cuda:12.4.1-devel-ubuntu22.04"
+            torch_index: "https://download.pytorch.org/whl/cu124"
+            cudart_lib: "libcudart.so.12"
+
+          - torch: "2.6"
+            cuda: "cu126"
+            cuda_image: "nvidia/cuda:12.6.0-devel-ubuntu22.04"
+            torch_index: "https://download.pytorch.org/whl/cu126"
+            cudart_lib: "libcudart.so.12"
+
+    env:
+      DEBIAN_FRONTEND: noninteractive
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y \
+            software-properties-common curl cmake ninja-build patchelf
+          add-apt-repository ppa:deadsnakes/ppa -y
+          apt-get update -qq
+          PY=${{ matrix.python }}
+          apt-get install -y python${PY} python${PY}-dev python${PY}-distutils
+          curl -sS https://bootstrap.pypa.io/get-pip.py | python${PY}
+
+      - name: Install PyTorch ${{ matrix.torch }} with CUDA ${{ matrix.cuda }}
+        run: |
+          PY=${{ matrix.python }}
+          python${PY} -m pip install --upgrade pip
+          python${PY} -m pip install "torch==${{ matrix.torch }}.*" \
+            --index-url ${{ matrix.torch_index }}
+          python${PY} -m pip install wheel setuptools packaging auditwheel
+
+      - name: Stamp version with CUDA tag
+        # Writes  version = "0.2.0+cu121"  into setup.py so the wheel name
+        # includes the CUDA version. This lets multiple CUDA builds coexist
+        # on the GitHub Releases page.
+        run: |
+          sed -i 's/version="0\.2\.0"/version="0.2.0+${{ matrix.cuda }}"/' \
+            pytorch_binding/setup.py
+
+      - name: Build C library with CUDA
+        run: |
+          mkdir -p build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DWITH_GPU=ON -G Ninja
+          cmake --build . --parallel
+
+      - name: Build raw wheel
+        run: |
+          PY=${{ matrix.python }}
+          cd pytorch_binding
+          WARP_RNNT_PATH=../build python${PY} -m pip wheel . -w /tmp/raw
+
+      - name: Repair wheel
+        # Exclude libcudart: the user must have CUDA installed for GPU use.
+        # We do not bundle it because it is platform-specific and huge.
+        run: |
+          auditwheel repair /tmp/raw/*.whl \
+            --exclude ${{ matrix.cudart_lib }} \
+            -w dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-linux-${{ matrix.cuda }}-torch${{ matrix.torch }}-py${{ matrix.python }}
+          path: dist/*.whl
+
+  # ===========================================================================
+  # WINDOWS CUDA WHEELS  ->  uploaded to GitHub Releases
+  # ===========================================================================
+  windows-cuda:
+    name: Windows ${{ matrix.cuda }} / Torch ${{ matrix.torch }} / Py ${{ matrix.python }}
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12"]
+        include:
+          - torch: "2.4"
+            cuda: "cu121"
+            cuda_version: "12.1.0"
+            torch_index: "https://download.pytorch.org/whl/cu121"
+
+          - torch: "2.5"
+            cuda: "cu124"
+            cuda_version: "12.4.0"
+            torch_index: "https://download.pytorch.org/whl/cu124"
+
+          - torch: "2.6"
+            cuda: "cu126"
+            cuda_version: "12.6.0"
+            torch_index: "https://download.pytorch.org/whl/cu126"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install CUDA Toolkit ${{ matrix.cuda_version }}
+        uses: Jimver/cuda-toolkit@v0.2.15
+        with:
+          cuda: ${{ matrix.cuda_version }}
+          method: network
+          sub-packages: '["nvcc", "cudart", "cublas"]'
+
+      - name: Add Ninja to PATH
+        run: |
+          $n = Get-ChildItem "C:\Program Files\Microsoft Visual Studio" -Recurse -Filter ninja.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($n) { Add-Content $env:GITHUB_PATH $n.DirectoryName }
+
+      - name: Stamp version with CUDA tag
+        run: |
+          (Get-Content pytorch_binding\setup.py) `
+            -replace 'version="0\.2\.0"', 'version="0.2.0+${{ matrix.cuda }}"' |
+          Set-Content pytorch_binding\setup.py
+
+      - name: Install PyTorch ${{ matrix.torch }} + ${{ matrix.cuda }}
+        run: |
+          pip install "torch==${{ matrix.torch }}.*" `
+            --index-url ${{ matrix.torch_index }}
+          pip install wheel setuptools packaging delvewheel
+
+      - name: Build C library with CUDA
+        run: python build.py --no-install
+
+      - name: Build raw wheel
+        run: |
+          cd pytorch_binding
+          $env:WARP_RNNT_PATH = (Resolve-Path "../build").Path
+          pip wheel . -w C:\tmp\raw
+
+      - name: Repair wheel
+        run: delvewheel repair C:\tmp\raw\*.whl -w dist\
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-windows-${{ matrix.cuda }}-torch${{ matrix.torch }}-py${{ matrix.python }}
+          path: dist\*.whl
+
+  # ===========================================================================
+  # UPLOAD CPU WHEELS TO PYPI
+  # Triggered after all CPU build jobs succeed.
+  # ===========================================================================
+  upload-pypi:
+    name: Upload CPU wheels to PyPI
+    needs: [linux-cpu, windows-cpu, macos-cpu]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+
+    environment:
+      name: pypi
+      url: https://pypi.org/project/warprnnt-pytorch/
+
+    permissions:
+      id-token: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*-cpu-*
+          path: dist/
+          merge-multiple: true
+
+      - name: List CPU wheels
+        run: ls -lh dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  # ===========================================================================
+  # UPLOAD CUDA WHEELS TO GITHUB RELEASES
+  # GitHub Releases can host files up to 2 GB each.
+  # Users install with --find-links pointing at the releases page.
+  # ===========================================================================
+  upload-github-release:
+    name: Upload CUDA wheels to GitHub Release
+    needs: [linux-cuda, windows-cuda]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+
+    permissions:
+      contents: write   # needed to upload to releases
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*-cu*
+          path: cuda_wheels/
+          merge-multiple: true
+
+      - name: List CUDA wheels
+        run: ls -lh cuda_wheels/
+
+      - name: Attach wheels to the GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: cuda_wheels/*.whl
+          # tag_name is inherited from the release that triggered this workflow

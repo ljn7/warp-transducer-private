@@ -1,42 +1,95 @@
-name: CI (CPU-only)
+name: CI
+
+# Runs on every push and pull request to verify the CPU build and tests.
+# This is fast (no GPU needed) and works on GitHub's free runners.
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, cross-platform]
   pull_request:
     branches: [main, master]
 
 jobs:
-  build-and-test:
+  # -------------------------------------------------------------------------
+  # Linux CPU build and test
+  # The primary target for CI because GitHub's Linux runners are fastest.
+  # -------------------------------------------------------------------------
+  build-and-test-linux:
+    name: Linux CPU (Ubuntu)
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake build-essential
+          sudo apt-get update -qq
+          sudo apt-get install -y cmake build-essential ninja-build
 
-      - name: Configure CMake (CPU-only)
-        run: |
-          mkdir -p build
-          cd build
-          cmake ..
+      - name: Configure (CPU-only)
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DWITH_GPU=OFF
 
-      - name: Build project
-        run: |
-          cd build
-          make -j$(nproc)
+      - name: Build
+        run: cmake --build build --parallel
 
-      - name: Install and update linker cache
-        run: |
-          cd build
-          sudo make install
-          sudo ldconfig
+      - name: Install library so tests can find it
+        run: sudo cmake --install build && sudo ldconfig
 
       - name: Run CPU tests
+        run: ./build/test_cpu
+
+  # -------------------------------------------------------------------------
+  # macOS CPU build and test
+  # Catches platform-specific issues early.
+  # -------------------------------------------------------------------------
+  build-and-test-macos:
+    name: macOS CPU
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install cmake and ninja
+        run: brew install cmake ninja
+
+      - name: Configure (CPU-only)
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DWITH_GPU=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run CPU tests
+        # On macOS, set DYLD_LIBRARY_PATH so the test binary finds libwarprnnt.dylib
+        run: DYLD_LIBRARY_PATH=./build ./build/test_cpu
+
+  # -------------------------------------------------------------------------
+  # Windows CPU build and test
+  # Verifies all the MSVC-specific fixes we made.
+  # -------------------------------------------------------------------------
+  build-and-test-windows:
+    name: Windows CPU (MSVC)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # cmake comes pre-installed on windows-latest.
+      # Ninja comes with Visual Studio Build Tools (already on windows-latest).
+      - name: Add Ninja to PATH
         run: |
-          cd build
-          ./test_cpu
+          $ninja = Get-ChildItem -Recurse "C:\Program Files\Microsoft Visual Studio" -Filter ninja.exe 2>$null | Select-Object -First 1
+          if ($ninja) {
+            echo $ninja.DirectoryName | Out-File -Append -FilePath $env:GITHUB_PATH
+          }
+
+      - name: Configure (CPU-only)
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DWITH_GPU=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run CPU tests
+        run: .\build\test_cpu.exe
