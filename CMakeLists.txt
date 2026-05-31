@@ -196,6 +196,11 @@ if(USE_CUDA)
         OFF)
     if(MSVC AND (MSVC_VERSION GREATER_EQUAL 1950 OR CUDA_ALLOW_UNSUPPORTED_COMPILER))
         set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -allow-unsupported-compiler")
+        # The MSVC standard library hard-asserts (STL1002) when compiled by a
+        # CUDA toolkit older than it expects. That check is separate from nvcc's
+        # own host-compiler check and is only silenced by this macro. Defining
+        # it lets an older CUDA toolkit compile against a newer MSVC STL.
+        set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -Xcompiler /D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH")
         message(STATUS "Adding -allow-unsupported-compiler (MSVC ${CMAKE_CXX_COMPILER_VERSION})")
     endif()
 
