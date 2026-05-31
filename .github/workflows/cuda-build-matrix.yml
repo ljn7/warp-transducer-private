@@ -9,9 +9,11 @@ name: CUDA build matrix
 # platforms.
 #   Linux:   built inside the official nvidia/cuda:<ver>-devel-ubuntu22.04
 #            Docker images.
-#   Windows: installed with the Jimver/cuda-toolkit action. For CUDA < 12.4 the
-#            job installs and pins an older MSVC toolset (see windows-cuda-build)
-#            so the build does not hit the toolset-14.40+ STL1002 assert.
+#   Windows: installed with the Jimver/cuda-toolkit action and built with the
+#            runner's default MSVC toolset. For CUDA < 12.4 the build defines
+#            _ALLOW_COMPILER_AND_STL_VERSION_MISMATCH (via
+#            CUDA_ALLOW_UNSUPPORTED_COMPILER) to get past the toolset-14.40+
+#            STL1002 assert; the hosted runner has no older toolset to pin to.
 #
 # CUDA 13.x builds use CMakeLists' version-aware architecture list, which drops
 # the Maxwell/Pascal/Volta targets that CUDA 13 removed.
@@ -96,61 +98,50 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # toolset/component pin an older MSVC for CUDA < 12.4 so the compile
-        # does not hit the STL1002 assert (which only exists in toolset 14.40+).
-        # The component is the VS installer id that provides that toolset; it is
-        # installed on the runner before the toolset is activated. CUDA >= 12.4
-        # works with the default latest toolset, so those leave both blank.
-        include:
-          - { version: "11.8.0", method: network, toolset: "14.37", component: "Microsoft.VisualStudio.Component.VC.14.37.17.7.x86.x64" }
-          - { version: "12.0.1", method: network, toolset: "14.34", component: "Microsoft.VisualStudio.Component.VC.14.34.17.4.x86.x64" }
-          - { version: "12.1.1", method: network, toolset: "14.35", component: "Microsoft.VisualStudio.Component.VC.14.35.17.5.x86.x64" }
-          - { version: "12.2.2", method: network, toolset: "14.36", component: "Microsoft.VisualStudio.Component.VC.14.36.17.6.x86.x64" }
-          - { version: "12.3.2", method: network, toolset: "14.37", component: "Microsoft.VisualStudio.Component.VC.14.37.17.7.x86.x64" }
-          - { version: "12.4.1", method: network, toolset: "", component: "" }
-          - { version: "12.5.1", method: network, toolset: "", component: "" }
-          - { version: "12.6.3", method: network, toolset: "", component: "" }
-          - { version: "12.8.1", method: network, toolset: "", component: "" }
-          - { version: "12.9.1", method: network, toolset: "", component: "" }
-          - { version: "13.0.2", method: local,   toolset: "", component: "" }
-          - { version: "13.1.1", method: local,   toolset: "", component: "" }
-          - { version: "13.2.0", method: local,   toolset: "", component: "" }
+        version:
+          - "11.8.0"
+          - "12.0.1"
+          - "12.1.1"
+          - "12.2.2"
+          - "12.3.2"
+          - "12.4.1"
+          - "12.5.1"
+          - "12.6.3"
+          - "12.8.1"
+          - "12.9.1"
+          - "13.0.2"
+          - "13.1.1"
+          - "13.2.0"
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install MSVC toolset ${{ matrix.toolset }}
-        # CUDA < 12.4 needs an older toolset than the runner's default. Add the
-        # component through the VS installer, then ilammy activates it below.
-        if: ${{ matrix.component != '' }}
-        run: |
-          $installer = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vs_installer.exe"
-          $installPath = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise"
-          $proc = Start-Process -FilePath $installer -Wait -PassThru -ArgumentList @(
-            "modify", "--installPath", "$installPath",
-            "--add", "${{ matrix.component }}",
-            "--quiet", "--norestart", "--nocache"
-          )
-          Write-Host "vs_installer exit code: $($proc.ExitCode)"
-
-      - name: Install CUDA toolkit ${{ matrix.version }}
+      # CUDA <= 12.x: a curated sub-package set is enough and keeps the install
+      # small. curand_dev provides curand.lib (the import library FindCUDA
+      # resolves CUDA_curand_LIBRARY against); the plain curand component only
+      # ships the runtime DLL.
+      - name: Install CUDA toolkit ${{ matrix.version }} (curated)
+        if: ${{ !startsWith(matrix.version, '13.') }}
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
           cuda: ${{ matrix.version }}
-          method: ${{ matrix.method }}
-          # curand_dev provides curand.lib (the import library the linker
-          # needs); the plain curand component only ships the runtime DLL.
-          # FindCUDA resolves CUDA_curand_LIBRARY against that .lib.
+          method: network
           sub-packages: '["nvcc", "cudart", "curand", "curand_dev", "thrust", "visual_studio_integration"]'
+
+      # CUDA 13.x: the curated sub-packages omit the crt headers
+      # (crt/host_config.h), so install the full toolkit instead.
+      - name: Install CUDA toolkit ${{ matrix.version }} (full)
+        if: ${{ startsWith(matrix.version, '13.') }}
+        uses: Jimver/cuda-toolkit@v0.2.35
+        with:
+          cuda: ${{ matrix.version }}
+          method: network
 
       - name: Set up MSVC environment
         # The Ninja generator does not auto-load vcvars the way the Visual
         # Studio generator does, so cl.exe must be put on PATH explicitly.
-        # toolset pins the version for CUDA < 12.4; blank means latest.
         uses: ilammy/msvc-dev-cmd@v1
-        with:
-          toolset: ${{ matrix.toolset }}
 
       - name: Add Ninja to PATH
         run: |
