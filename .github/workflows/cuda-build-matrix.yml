@@ -105,7 +105,10 @@ jobs:
         with:
           cuda: ${{ matrix.version }}
           method: network
-          sub-packages: '["nvcc", "cudart", "curand", "cublas", "thrust", "visual_studio_integration"]'
+          # curand_dev provides curand.lib (the import library the linker
+          # needs); the plain curand component only ships the runtime DLL.
+          # FindCUDA resolves CUDA_curand_LIBRARY against that .lib.
+          sub-packages: '["nvcc", "cudart", "curand", "curand_dev", "thrust", "visual_studio_integration"]'
 
       - name: Set up MSVC environment
         # The Ninja generator does not auto-load vcvars the way the Visual
