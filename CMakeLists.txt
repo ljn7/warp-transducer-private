@@ -169,9 +169,17 @@ if(USE_CUDA)
     # host compiler list. The -allow-unsupported-compiler flag bypasses the
     # version check in cuda/crt/host_config.h. VS 2025 is ABI-compatible with
     # VS 2022, so this is safe in practice.
-    if(MSVC AND MSVC_VERSION GREATER_EQUAL 1950)
+    #
+    # The same situation arises when pairing an older CUDA toolkit (e.g. 11.8)
+    # with a newer-than-supported VS 2022 toolset, which happens on CI runners
+    # and when testing many CUDA versions against one installed compiler. The
+    # CUDA_ALLOW_UNSUPPORTED_COMPILER option forces the flag on for those cases.
+    option(CUDA_ALLOW_UNSUPPORTED_COMPILER
+        "Pass -allow-unsupported-compiler to nvcc when the host compiler is newer than the CUDA toolkit officially supports"
+        OFF)
+    if(MSVC AND (MSVC_VERSION GREATER_EQUAL 1950 OR CUDA_ALLOW_UNSUPPORTED_COMPILER))
         set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -allow-unsupported-compiler")
-        message(STATUS "VS 2025 detected (MSVC ${CMAKE_CXX_COMPILER_VERSION}): adding -allow-unsupported-compiler")
+        message(STATUS "Adding -allow-unsupported-compiler (MSVC ${CMAKE_CXX_COMPILER_VERSION})")
     endif()
 
     message(STATUS "CUDA NVCC flags: ${CUDA_NVCC_FLAGS}")
