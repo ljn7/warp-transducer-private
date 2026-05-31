@@ -5,17 +5,16 @@ name: CUDA build matrix
 # and compile with WITH_GPU=ON but do not run test_gpu (GitHub-hosted runners
 # have no GPU).
 #
-# Coverage: latest patch of each CUDA minor from 11.8 through 12.9.
+# Coverage: latest patch of each CUDA minor from 11.8 through 13.2.
 #   Linux:   built inside the official nvidia/cuda:<ver>-devel-ubuntu22.04
 #            Docker images (nvcc + libraries preinstalled).
 #   Windows: the CUDA toolkit is installed with the Jimver/cuda-toolkit
 #            action, then compiled with the Ninja generator.
 #
-# CUDA 13.x is intentionally excluded: CUDA 13 removed GPU architectures below
-# sm_75, but CMakeLists.txt still emits -gencode for sm_52, so 13.x builds
-# would fail until the architecture list is updated.
+# CUDA 13.x builds use CMakeLists' version-aware architecture list, which drops
+# the Maxwell/Pascal/Volta targets that CUDA 13 removed.
 #
-# WARNING ON COST: this matrix is large (10 Linux + 10 Windows jobs) and each
+# WARNING ON COST: this matrix is large (13 Linux + 13 Windows jobs) and each
 # job installs a multi-GB toolkit. Windows runners bill at 2x. It is wired to
 # run on every branch push and pull request; narrow the branches filter or
 # trim the matrix if Actions minutes become a concern.
@@ -52,6 +51,9 @@ jobs:
           - "12.6.3"
           - "12.8.1"
           - "12.9.1"
+          - "13.0.2"
+          - "13.1.1"
+          - "13.2.0"
 
     env:
       DEBIAN_FRONTEND: noninteractive
@@ -95,6 +97,9 @@ jobs:
           - "12.6.3"
           - "12.8.1"
           - "12.9.1"
+          - "13.0.2"
+          - "13.1.1"
+          - "13.2.0"
 
     steps:
       - name: Checkout repository

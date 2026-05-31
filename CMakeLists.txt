@@ -131,29 +131,46 @@ if(USE_CUDA)
         set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_50,code=sm_50")
     endif()
 
-    set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_52,code=sm_52")
-    
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER "5")
         set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -D_MWAITXINTRIN_H_INCLUDED -D_FORCE_INLINES")
     endif()
 
-    if(CUDA_VERSION GREATER 7.6)
-        set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_60,code=sm_60")
-        set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_61,code=sm_61")
-        set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_62,code=sm_62")
+    # Maxwell, Pascal, and Volta (sm_52 through sm_70) were removed in CUDA 13.
+    # Only emit those targets for toolkits older than 13.0; from 13.0 on the
+    # minimum supported architecture is Turing (sm_75).
+    if(CUDA_VERSION VERSION_LESS "13.0")
+        set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_52,code=sm_52")
+
+        if(CUDA_VERSION GREATER 7.6)
+            set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_60,code=sm_60")
+            set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_61,code=sm_61")
+            set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_62,code=sm_62")
+        endif()
+
+        if(CUDA_VERSION GREATER 8.9)
+            set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_70,code=sm_70")
+        endif()
     endif()
 
-    if(CUDA_VERSION GREATER 8.9)
-        set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_70,code=sm_70")
-    endif()
-
+    # Turing (CUDA 10+)
     if(CUDA_VERSION GREATER 9.9)
         set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_75,code=sm_75")
     endif()
 
+    # Ampere (CUDA 11+)
     if(CUDA_VERSION VERSION_GREATER_EQUAL "11.0")
         set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_80,code=sm_80")
         set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_86,code=sm_86")
+    endif()
+
+    # Ada Lovelace (CUDA 11.8+)
+    if(CUDA_VERSION VERSION_GREATER_EQUAL "11.8")
+        set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_89,code=sm_89")
+    endif()
+
+    # Hopper (CUDA 12+)
+    if(CUDA_VERSION VERSION_GREATER_EQUAL "12.0")
+        set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -gencode arch=compute_90,code=sm_90")
     endif()
 
     if(NOT APPLE)
