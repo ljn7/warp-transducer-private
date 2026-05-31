@@ -5,19 +5,20 @@ name: CUDA build matrix
 # and compile with WITH_GPU=ON but do not run test_gpu (GitHub-hosted runners
 # have no GPU).
 #
-# Coverage: latest patch of each CUDA minor from 11.8 through 13.2.
-#   Linux:   built inside the official nvidia/cuda:<ver>-devel-ubuntu22.04
-#            Docker images (nvcc + libraries preinstalled).
-#   Windows: the CUDA toolkit is installed with the Jimver/cuda-toolkit
-#            action, then compiled with the Ninja generator.
+# Coverage: latest patch of each CUDA minor.
+#   Linux:   11.8 through 13.2, built inside the official
+#            nvidia/cuda:<ver>-devel-ubuntu22.04 Docker images.
+#   Windows: 12.4 through 12.9 only, installed with the Jimver/cuda-toolkit
+#            action (see the windows-cuda-build job for why the range is
+#            narrower on the hosted runner).
 #
 # CUDA 13.x builds use CMakeLists' version-aware architecture list, which drops
 # the Maxwell/Pascal/Volta targets that CUDA 13 removed.
 #
-# WARNING ON COST: this matrix is large (13 Linux + 13 Windows jobs) and each
-# job installs a multi-GB toolkit. Windows runners bill at 2x. It is wired to
-# run on every branch push and pull request; narrow the branches filter or
-# trim the matrix if Actions minutes become a concern.
+# WARNING ON COST: this matrix installs a multi-GB toolkit per job (13 Linux +
+# 5 Windows), and Windows runners bill at 2x. It is wired to run on every
+# branch push and pull request; narrow the branches filter or trim the matrix
+# if Actions minutes become a concern.
 
 on:
   workflow_dispatch:
@@ -76,8 +77,15 @@ jobs:
   # ===========================================================================
   # WINDOWS: install the CUDA toolkit with Jimver, set up MSVC, compile
   #
-  # CUDA_ALLOW_UNSUPPORTED_COMPILER=ON lets older toolkits (11.8, 12.0, 12.1)
-  # compile against the newer VS 2022 toolset on windows-latest.
+  # The Windows matrix is limited to CUDA 12.4 through 12.9. Two hard limits
+  # on the hosted windows-latest runner make the rest impossible:
+  #   * CUDA < 12.4: the runner's MSVC standard library hard-asserts
+  #     (STL1002 "expected CUDA 12.4 or newer"). nvcc's
+  #     -allow-unsupported-compiler cannot bypass an MSVC STL static_assert,
+  #     and no older MSVC toolset is installed to compile against.
+  #   * CUDA 13.x: the Jimver network install does not lay down the crt
+  #     headers (crt/host_config.h missing), so nvcc cannot compile.
+  # Linux covers the full 11.8 - 13.2 range; its containers ship a matching GCC.
   # ===========================================================================
   windows-cuda-build:
     name: Windows CUDA ${{ matrix.version }} (compile-only)
@@ -87,19 +95,11 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - "11.8.0"
-          - "12.0.1"
-          - "12.1.1"
-          - "12.2.2"
-          - "12.3.2"
           - "12.4.1"
           - "12.5.1"
           - "12.6.3"
           - "12.8.1"
           - "12.9.1"
-          - "13.0.2"
-          - "13.1.1"
-          - "13.2.0"
 
     steps:
       - name: Checkout repository
