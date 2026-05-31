@@ -5,10 +5,10 @@ name: CUDA build matrix
 # required: these jobs install the CUDA toolkit and compile with WITH_GPU=ON
 # but do not run test_gpu (GitHub-hosted runners have no GPU).
 #
-# This is the expensive matrix (each job installs a multi-GB toolkit), so it
-# runs on pull requests to master, pushes to master, and manual dispatch,
-# rather than on every push to every branch. To run it on a feature branch,
-# either open a pull request or trigger it manually from the Actions tab.
+# This is the expensive matrix (each job installs a multi-GB toolkit). It is
+# configured to run on every branch push and pull request. Be aware this can
+# consume a lot of Actions minutes on a private repo (Windows runners bill at
+# 2x); to limit cost later, narrow the branches filter to [main, master].
 #
 # CUDA coverage mirrors build_wheels.yml:
 #   Linux:   cu118, cu121, cu124, cu126
@@ -18,9 +18,9 @@ name: CUDA build matrix
 on:
   workflow_dispatch:
   pull_request:
-    branches: [main, master]
+    branches: ['**']
   push:
-    branches: [main, master]
+    branches: ['**']
 
 jobs:
   # ===========================================================================
